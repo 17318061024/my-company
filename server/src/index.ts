@@ -3,7 +3,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { skillRouter } from './routes/skills.js';
 import { agentRouter } from './routes/agents.js';
-import { initDatabase, seedDefaultSkills } from './db/skillStore.js';
+import { seedDefaultSkills } from './db/skillStore.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -24,7 +24,6 @@ app.get('/api/health', (_req: Request, res: Response) => {
 // Initialize and start server
 async function start() {
   try {
-    await initDatabase();
     await seedDefaultSkills();
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);

@@ -1,4 +1,5 @@
-import { openDB, DBSchema, IDBPDatabase } from 'idb';
+import fs from 'fs/promises';
+import path from 'path';
 
 export type AgentRole = 'product_manager' | 'developer' | 'tester' | 'ui';
 
@@ -11,42 +12,44 @@ export interface AgentSkill {
   updatedAt: number;
 }
 
-interface AgentDB extends DBSchema {
-  skills: {
-    key: string;
-    value: AgentSkill;
-    indexes: { 'by-role': AgentRole };
-  };
+const DB_PATH = path.join(process.cwd(), 'data', 'skills.json');
+
+// 确保 data 目录存在
+async function ensureDir() {
+  const dir = path.dirname(DB_PATH);
+  try {
+    await fs.mkdir(dir, { recursive: true });
+  } catch {}
 }
 
-let db: IDBPDatabase<AgentDB> | null = null;
+// 读取 JSON 文件
+async function readData(): Promise<AgentSkill[]> {
+  try {
+    const content = await fs.readFile(DB_PATH, 'utf-8');
+    return JSON.parse(content);
+  } catch {
+    return [];
+  }
+}
 
-export async function initDatabase(): Promise<IDBPDatabase<AgentDB>> {
-  if (db) return db;
-
-  db = await openDB<AgentDB>('minimax-agent-db', 1, {
-    upgrade(database) {
-      const store = database.createObjectStore('skills', { keyPath: 'id' });
-      store.createIndex('by-role', 'role', { unique: false });
-    },
-  });
-
-  return db;
+// 写入 JSON 文件
+async function writeData(data: AgentSkill[]): Promise<void> {
+  await ensureDir();
+  await fs.writeFile(DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
 }
 
 export async function getSkill(role: AgentRole): Promise<AgentSkill | undefined> {
-  const database = await initDatabase();
-  return database.getFromIndex('skills', 'by-role', role);
+  const data = await readData();
+  return data.find((s) => s.role === role);
 }
 
 export async function getAllSkills(): Promise<AgentSkill[]> {
-  const database = await initDatabase();
-  return database.getAll('skills');
+  return readData();
 }
 
 export async function saveSkill(role: AgentRole, content: string): Promise<AgentSkill> {
-  const database = await initDatabase();
-  const existing = await getSkill(role);
+  const data = await readData();
+  const existing = data.find((s) => s.role === role);
   const now = Date.now();
 
   const skill: AgentSkill = {
@@ -58,7 +61,13 @@ export async function saveSkill(role: AgentRole, content: string): Promise<Agent
     updatedAt: now,
   };
 
-  await database.put('skills', skill);
+  if (existing) {
+    Object.assign(existing, skill);
+  } else {
+    data.push(skill);
+  }
+
+  await writeData(data);
   return skill;
 }
 
@@ -119,7 +128,6 @@ const DEFAULT_SKILLS: Record<AgentRole, string> = {
 };
 
 export async function seedDefaultSkills(): Promise<void> {
-  const database = await initDatabase();
   const roles: AgentRole[] = ['product_manager', 'developer', 'tester', 'ui'];
 
   for (const role of roles) {

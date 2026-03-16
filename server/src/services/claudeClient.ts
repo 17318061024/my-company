@@ -1,14 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk';
+const API_KEY = process.env.MINIMAX_API_KEY;
+const BASE_URL = 'https://api.minimax.chat';
 
-const apiKey = process.env.ANTHROPIC_API_KEY;
-
-if (!apiKey) {
-  console.warn('Warning: ANTHROPIC_API_KEY is not set. Agent calls will fail.');
+if (!API_KEY) {
+  console.warn('Warning: MINIMAX_API_KEY is not set. Agent calls will fail.');
 }
-
-const client = new Anthropic({
-  apiKey: apiKey || 'dummy-key',
-});
 
 export interface AgentResponse {
   content: string;
@@ -22,30 +17,44 @@ export interface AgentResponse {
 export async function callAgent(
   systemPrompt: string,
   userMessage: string,
-  model: string = 'claude-sonnet-4-20250514'
+  model: string = 'abab6.5s-chat'
 ): Promise<AgentResponse> {
   try {
-    const response = await client.messages.create({
-      model,
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
+    const response = await fetch(`${BASE_URL}/v1/text/chatcompletion_v2`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 4096,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+      }),
     });
 
-    const content = response.content
-      .map((block) => ('text' in block ? block.text : ''))
-      .join('');
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`MiniMax API error: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    const content = data.choices?.[0]?.message?.content || '';
 
     return {
       content,
-      model: response.model,
+      model: data.model,
       usage: {
-        input_tokens: response.usage.input_tokens,
-        output_tokens: response.usage.output_tokens,
+        input_tokens: data.usage?.prompt_tokens || 0,
+        output_tokens: data.usage?.completion_tokens || 0,
       },
     };
   } catch (error) {
-    console.error('Claude API error:', error);
+    console.error('MiniMax API error:', error);
     throw error;
   }
 }
